@@ -1,0 +1,23 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#include <stdint.h>
+
+#define F_CPU 8000000UL
+#define DEBUG 1
+
+#define TICK_HZ (30)
+
+#define BUTTON_REPEAT_DELAY (250) /* ms */
+#define BUTTON_REPEAT_HZ (30)
+
+#define NVR_SAVE_DELAY (2000) /* ms */
+
+#define DEFAULT_LUMINANCE (50)
+//#define PROVIDE_EDID
+
+#define DCCCI_ADDRESS (0x37)
+#define EDID_ADDRESS (0x50)
+
+#endif /* CONFIG_H */
+
