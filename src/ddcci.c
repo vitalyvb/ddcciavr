@@ -51,6 +51,7 @@ static volatile char tick;
 volatile int tick2;
 #endif
 
+static char controls_enabled();
 
 static inline void ioinit()
 {
@@ -62,17 +63,24 @@ static inline void ioinit()
     DDRD = 0;
 
     /* OC0A PWM output */
-    PORTD &= ~_BV(PD6);
-    DDRD |= _BV(PD6);
+    PORTD &= ~_BV(PD6); /* low */
+    DDRD |= _BV(PD6); /* output */
 
     /* PB0 output - LED */
-    PORTB &= ~_BV(PB0);
+    PORTB &= ~_BV(PB0); /* low */
     DDRB |= _BV(PB0);
+
+    /* EN_OUT */
+    PORTD &= ~_BV(PD5); /* low */
+    DDRD |= _BV(PD5);
 
     /* buttons input */
     DDRD &= ~(_BV(PD2)|_BV(PD4)); /* input */
     PORTD |= (_BV(PD2)|_BV(PD4)); /* pull-up */
 
+    /* EN_IN */
+    DDRD &= ~_BV(PD3); /* input */
+    PORTD &= ~_BV(PD3); /* no pull-up */
 
     /* - - - - - - */
     /* INIT USART  */
@@ -93,12 +101,8 @@ static inline void ioinit()
 
 
     /* - - - - - - - - - */
-    /* INIT AND RUN PWM  */
+    /* pre-INIT PWM      */
     /* - - - - - - - - - */
-    TCNT0 = 0; //clear timer
-
-    /* fast pwm mode 3, no prescaler */
-    TCCR0A = (1<<COM0A1) | (0<<COM0A0) | (1<<WGM01) | (1<<WGM00); /* Clear OC0A on compare match, set OC0A at BOTTOM */
     TCCR0B = (1<<CS00); /* no prescaler */
     TIMSK0 = 0; /* no interrupts */
     OCR0A = INITIAL_PWM;
@@ -116,7 +120,6 @@ static inline void ioinit()
 
     OCR1A   = (F_CPU/64/TICK_HZ);
     TCCR1B |= ((1 << CS10) | (1 << CS11)); /* Start timer at Fcpu/64 */
-
 
     /* - - - - - - */
     /* INIT  I2C   */
@@ -148,6 +151,28 @@ void blink()
     sei();
 }
 
+/******************/
+/*  EN_IN  EN_OUT */
+/******************/
+
+static inline char get_en_in()
+{
+#ifdef SET_ALWAYS_EN
+    return TRUE;
+#else
+    return ((PIND & _BV(PD3)) != 0);
+#endif
+}
+
+static inline void set_en_out()
+{
+    PORTD |= _BV(PD5);
+}
+
+static inline void clear_en_out()
+{
+    PORTD &= ~_BV(PD5);
+}
 
 /***********************/
 /*  PWM and luminance  */
@@ -157,6 +182,22 @@ static uint8_t ctl_luminance;
 static void set_pwm(uint8_t value)
 {
     OCR0A = value;
+}
+
+static void pwm_start()
+{
+    PORTD &= ~_BV(PD6); /* low */
+
+    TCNT0 = 0; //clear timer
+    /* fast pwm mode 3 */
+    TCCR0A = (1<<COM0A1) | (0<<COM0A0) | (1<<WGM01) | (1<<WGM00); /* Clear OC0A on compare match, set OC0A at BOTTOM */
+    DDRD |= _BV(PD6); /* output */
+}
+
+static void pwm_stop()
+{
+    TCCR0A = 0; /* disable pwm */
+    PORTD &= ~_BV(PD6); /* low */
 }
 
 static void lumunance_set_int(uint8_t value)
@@ -233,6 +274,12 @@ static char buttons_status()
 {
     char res = 0;
 
+    if (!controls_enabled()){
+	button_up(0);
+	button_up(1);
+	return res;
+    }
+
     if ((PIND & _BV(PD2)) == 0){
 	res |= button_down(0) << 0;
     } else {
@@ -262,6 +309,121 @@ void restore()
 	if (tmp <= VCPH_LUMINANCE_MAX)
 	    lumunance_set_int(tmp);
     }
+}
+
+/******************/
+/*  EN_ logic    */
+/******************/
+
+/*
+Should work as follows:
+
+       | Slow start      | PWM disable delayed  | Fast resume
+===============================================================
+       |     /---------- | --\                  |     /-------
+EN_IN  |    /            |    \                 |    /
+       | __/             |     \_______________ | --/
+===============================================================
+       |            /--- | ---\                 |      /-----
+EN_OUT |           /     |     >                |     /
+       |----------/      | ___/ \______________ | ---/
+===============================================================
+       |      /--------- | ---------------\     | -----------
+PWM_EN |     /           |                 \    |
+       | ---/            |                  \__ |
+===============================================================
+             |-----|           |-----------|
+           PWM settle            PWM keep
+*/
+
+#define EN_STOPPED (0)
+#define EN_DEBOUNCE1 (EN_STOPPED+1)
+#define EN_DEBOUNCE2 (EN_DEBOUNCE1+1)
+#define EN_DEBOUNCE3 (EN_DEBOUNCE2+1)
+#define EN_STARTING_PWM_WAIT (EN_DEBOUNCE3+1)
+#define EN_STARTED (EN_STARTING_PWM_WAIT+1)
+#define EN_STOPPING_PWM_KEEP (EN_STARTED+1)
+
+#define PWM_SETTLE_TICKS ((PWM_SETTLE_DELAY+TICK_HZ-1)/TICK_HZ)
+#define PWM_KEEP_TICKS ((PWM_KEEP_DELAY+TICK_HZ-1)/TICK_HZ)
+
+static char status_en;
+static volatile uint16_t status_en_timer;
+
+static void set_status_en_timer(const uint16_t t)
+{
+    cli();
+    status_en_timer = t;
+    sei();
+}
+
+static char controls_enabled()
+{
+    return (status_en == EN_STARTED);
+}
+
+static void handle_en_in()
+{
+    char en_in = get_en_in();
+
+    switch (status_en){
+    case EN_STOPPED:
+    case EN_DEBOUNCE1:
+    case EN_DEBOUNCE2:
+    case EN_DEBOUNCE3:
+	if (en_in){
+	    if (status_en != EN_DEBOUNCE3){
+		status_en++;
+		return;
+	    }
+	    pwm_start();
+	    set_status_en_timer(PWM_SETTLE_TICKS);
+	    status_en = EN_STARTING_PWM_WAIT;
+	    TRACE(0x40);
+	} else {
+	    status_en = EN_STOPPED;
+	}
+	break;
+    case EN_STARTING_PWM_WAIT:
+	if (en_in){
+	    if (status_en_timer == 0){
+		set_en_out();
+		status_en = EN_STARTED;
+		TRACE(0x41);
+	    }
+	} else {
+	    clear_en_out();
+	    set_status_en_timer(PWM_KEEP_TICKS);
+	    status_en = EN_STOPPING_PWM_KEEP;
+	    TRACE(0x42);
+	}
+	break;
+    case EN_STARTED:
+	if (!en_in){
+	    clear_en_out();
+	    set_status_en_timer(PWM_KEEP_TICKS);
+	    status_en = EN_STOPPING_PWM_KEEP;
+	    TRACE(0x43);
+	}
+	break;
+    case EN_STOPPING_PWM_KEEP:
+	if (en_in){
+	    set_en_out();
+	    status_en = EN_STARTED;
+	    TRACE(0x44);
+	} else {
+	    if (status_en_timer == 0){
+		pwm_stop();
+		status_en = EN_STOPPED;
+		TRACE(0x45);
+	    }
+	}
+	break;
+    default:
+	/* wtf? */
+	TRACE(0x46);
+	putl_P(PSTR("en err"));
+    };
 }
 
 /******************/
@@ -348,6 +510,8 @@ int main()
 
 	nvram_save();
 
+	handle_en_in();
+
 #if DEBUG
 	show_trace();
 
@@ -374,12 +538,16 @@ int main()
 
 ISR(TIMER1_COMPA_vect)
 {
-    if (blink_status == 1){
+    if (blink_status == 0){
+	/* do nothing */
+    } else if (blink_status == 1){
 	led_on();
 	blink_status = 2;
-    } else if (blink_status == 2){
+    } else if (blink_status >= (LED_BLINK_TIME/(1000/TICK_HZ))){
 	led_off();
 	blink_status = 0;
+    } else {
+	blink_status++;
     }
 #if DEBUG
     tick++;
@@ -388,4 +556,7 @@ ISR(TIMER1_COMPA_vect)
 
     if (nvram_timer > 0)
 	nvram_timer--;
+
+    if (status_en_timer > 0)
+	status_en_timer--;
 }
