@@ -19,5 +19,12 @@
 #define DCCCI_ADDRESS (0x37)
 #define EDID_ADDRESS (0x50)
 
+#define PWM_SETTLE_DELAY (100) /* ms */
+#define PWM_KEEP_DELAY (10000) /* ms */
+
+#define LED_BLINK_TIME (100) /* ms */
+
+//#define SET_ALWAYS_EN
+
 #endif /* CONFIG_H */
 
