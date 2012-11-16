@@ -466,7 +466,9 @@ int main()
 {
     char buttons;
 
-//    wdt_enable(0x4); /* 32K cycles, 0.25s */
+#if !DEBUG
+    wdt_enable(0x4); /* 32K cycles, 0.25s */
+#endif
 
     ioinit();
     libcinit();
