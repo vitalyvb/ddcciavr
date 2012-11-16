@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define F_CPU 8000000UL
-#define DEBUG 1
+#define DEBUG 0
 
 #define TICK_HZ (30)
 
