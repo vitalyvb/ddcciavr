@@ -1,0 +1,51 @@
+#ifndef PWM_TABLE_H
+#define PWM_TABLE_H
+#include <avr/pgmspace.h>
+
+#include <math.h>
+
+const PROGMEM uint8_t pwm_curve_P[VCPH_LUMINANCE_MAX+1] = {
+#if 1
+#define INITIAL_PWM (0x84)
+    /* Output range: 2.45-0.1V if VCC is 3.3V
+     */
+    0xbe,0xbd,0xbc,0xbb,0xba,0xb9,0xb8,0xb7,0xb6,0xb5,
+    0xb4,0xb3,0xb2,0xb1,0xb0,0xaf,0xad,0xac,0xab,0xaa,
+    0xa9,0xa8,0xa7,0xa6,0xa5,0xa3,0xa2,0xa1,0xa0,0x9f,
+    0x9e,0x9d,0x9b,0x9a,0x99,0x98,0x97,0x95,0x94,0x93,
+    0x92,0x90,0x8f,0x8e,0x8c,0x8b,0x8a,0x88,0x87,0x86,
+    0x84,0x83,0x81,0x80,0x7f,0x7d,0x7c,0x7a,0x78,0x77,
+    0x75,0x74,0x72,0x70,0x6e,0x6d,0x6b,0x69,0x67,0x65,
+    0x63,0x61,0x5f,0x5d,0x5b,0x59,0x56,0x54,0x52,0x4f,
+    0x4d,0x4a,0x48,0x45,0x42,0x3f,0x3c,0x39,0x36,0x33,
+    0x30,0x2c,0x29,0x25,0x21,0x1d,0x19,0x15,0x11,0x0c
+
+#else
+
+#define pwmVCC (3.3)
+#define pwmBRmin (0.1)
+#define pwmBRmax (2.45)
+#define pwmSteps (VCPH_LUMINANCE_MAX)
+
+#define pwmMin (fmax(1, floor(pwmBRmin/(pwmVCC/256))))
+#define pwmMax (fmin(254, ceil(pwmBRmax/(pwmVCC/256))))
+#define expbase (pow(pwmMax-pwmMin-pwmSteps, 1.0/pwmSteps))
+
+#define G(x) (pwmMin + x + pow(expbase, x) - 1)
+#define F(x) (pwmMax-(G(x)-pwmMin))
+#define INITIAL_PWM (F(VCPH_LUMINANCE_MAX/2))
+    F( 0),
+    F( 1), F( 2), F( 3), F( 4), F( 5), F( 6), F( 7), F( 8), F( 9), F(10),
+    F(11), F(12), F(13), F(14), F(15), F(16), F(17), F(18), F(19), F(20),
+    F(21), F(22), F(23), F(24), F(25), F(26), F(27), F(28), F(29), F(30),
+    F(31), F(32), F(33), F(34), F(35), F(36), F(37), F(38), F(39), F(40),
+    F(41), F(42), F(43), F(44), F(45), F(46), F(47), F(48), F(49), F(50),
+    F(51), F(52), F(53), F(54), F(55), F(56), F(57), F(58), F(59), F(60),
+    F(61), F(62), F(63), F(64), F(65), F(66), F(67), F(68), F(69), F(70),
+    F(71), F(72), F(73), F(74), F(75), F(76), F(77), F(78), F(79), F(80),
+    F(81), F(82), F(83), F(84), F(85), F(86), F(87), F(88), F(89), F(90),
+    F(91), F(92), F(93), F(94), F(95), F(96), F(97), F(98), F(99), F(100),
+#endif
+};
+
+#endif /* PWM_TABLE_H */
