@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <avr/pgmspace.h>
 
-#define VCP ("vcp(10) type(LCD) mccs_ver(1.1)")
+#define VCP ( "(vcp(10) type(LCD) mccs_ver(1.1))" )
 
 struct vcp_handler {
     uint8_t dirty:1;
