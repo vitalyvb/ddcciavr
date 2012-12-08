@@ -28,8 +28,6 @@
 #include <stdint.h>
 #include "vcp.h"
 
-#define VCP ("vcp(10) type(LCD) mccs_ver(1.1)")
-
 const PROGMEM char vcp_features_P[sizeof(VCP)-1] = VCP;
 
 #ifdef PROVIDE_EDID
