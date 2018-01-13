@@ -9,3 +9,5 @@ Project aims to provide simple but extensible implementation of 'slave' (i.e. mo
 Current functionallity includes brightness control with DDC/CI and hardware buttons.
 
 Requires at least 4K flash, hardware TWI.
+
+**See Wiki page for more info**
