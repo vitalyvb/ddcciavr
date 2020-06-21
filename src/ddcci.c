@@ -62,21 +62,30 @@ static inline void ioinit()
     DDRB = 0;
     DDRD = 0;
 
-    /* OC0A PWM output */
+    /* OC0A PWM output DIM */
     PORTD &= ~_BV(PD6); /* low */
     DDRD |= _BV(PD6); /* output */
 
-    /* PB0 output - LED */
-    PORTB &= ~_BV(PB0); /* low */
-    DDRB |= _BV(PB0);
+    /* OC0B PWM output LED (+) */
+    PORTD &= ~_BV(PD5); /* low */
+    DDRD |= _BV(PD5); /* output */
+
+    /* LEDs output - LED ON out-low, LED OFF in-HiZ */
+    PORTC &= ~(_BV(PC0)|_BV(PC1)); /* low */
+    DDRC &= ~(_BV(PC0)|_BV(PC1)); /* input */
+    PORTC &= ~(_BV(PC0)|_BV(PC1)); /* disable pull-up */
+
+    /* PB5 output - onboard LED */
+    PORTB &= ~_BV(PB5); /* low */
+    DDRB |= _BV(PB5);
 
     /* EN_OUT */
-    PORTD &= ~_BV(PD5); /* low */
-    DDRD |= _BV(PD5);
+    PORTD &= ~_BV(PD2); /* low */
+    DDRD |= _BV(PD2);
 
     /* buttons input */
-    DDRD &= ~(_BV(PD2)|_BV(PD4)); /* input */
-    PORTD |= (_BV(PD2)|_BV(PD4)); /* pull-up */
+    DDRC &= ~(_BV(PC2)|_BV(PC3)); /* input */
+    PORTC |= (_BV(PC2)|_BV(PC3)); /* pull-up */
 
     /* EN_IN */
     DDRD &= ~_BV(PD3); /* input */
@@ -103,10 +112,11 @@ static inline void ioinit()
     /* - - - - - - - - - */
     /* pre-INIT PWM      */
     /* - - - - - - - - - */
+    TCCR0A = (1<<WGM01) | (1<<WGM00); /* fast pwm mode 3 */ /* Clear on compare match, set at BOTTOM */
     TCCR0B = (1<<CS00); /* no prescaler */
     TIMSK0 = 0; /* no interrupts */
     OCR0A = INITIAL_PWM;
-
+    OCR0B = 0xff;
 
     /* - - - - - - */
     /* CLOCK TIMER */
@@ -131,16 +141,76 @@ static inline void ioinit()
 /******************/
 /*       LED      */
 /******************/
+
+/*
+                                    display         display
+                                      on              off
+
+    normal                          led1 off        led1 on
+                                    led2 on         led2 off
+
+    event (button press,            led1 on         led1 on
+          eeprom, start)            led2 off        led2 off
+
+
+*/
+
 static volatile char blink_status;
 
-static inline void led_on()
+static inline void _led1_on()
 {
-    PORTB |= _BV(PB0);
+    PORTC &= ~_BV(PC0); /* low */
+    DDRC |= _BV(PC0); /* output */
 }
 
-static inline void led_off()
+static inline void _led1_off()
 {
-    PORTB &= ~_BV(PB0);
+    DDRC &= ~_BV(PC0); /* input */
+    PORTC &= ~_BV(PC0); /* disable pull-up */
+}
+
+static inline void _led2_on()
+{
+    PORTC &= ~_BV(PC1); /* low */
+    DDRC |= _BV(PC1); /* output */
+}
+
+static inline void _led2_off()
+{
+    DDRC &= ~_BV(PC1); /* input */
+    PORTC &= ~_BV(PC1); /* disable pull-up */
+}
+
+
+static void led_event_on()
+{
+    if (controls_enabled()) {
+        _led2_off();
+        _led1_on();
+    } else {
+        _led2_off();
+        _led1_on();
+    }
+}
+
+static void led_event_off()
+{
+    if (controls_enabled()) {
+        _led1_off();
+        _led2_on();
+    } else {
+        _led2_off();
+        _led1_on();
+    }
+}
+
+static void led_display_sync()
+{
+    cli();
+    if (blink_status == 0){
+        led_event_off();
+    }
+    sei();
 }
 
 void blink()
@@ -149,6 +219,11 @@ void blink()
     if (blink_status == 0)
 	blink_status = 1;
     sei();
+}
+
+static inline void led_onboard_on()
+{
+    PORTB |= _BV(PB5);
 }
 
 /******************/
@@ -166,12 +241,12 @@ static inline char get_en_in()
 
 static inline void set_en_out()
 {
-    PORTD |= _BV(PD5);
+    PORTD |= _BV(PD2);
 }
 
 static inline void clear_en_out()
 {
-    PORTD &= ~_BV(PD5);
+    PORTD &= ~_BV(PD2);
 }
 
 /***********************/
@@ -179,25 +254,48 @@ static inline void clear_en_out()
 /***********************/
 static uint8_t ctl_luminance;
 
-static void set_pwm(uint8_t value)
+static void set_dim_pwm(uint8_t value)
 {
     OCR0A = value;
 }
 
-static void pwm_start()
+static void set_led_pwm(uint8_t value)
 {
-    PORTD &= ~_BV(PD6); /* low */
-
-    TCNT0 = 0; //clear timer
-    /* fast pwm mode 3 */
-    TCCR0A = (1<<COM0A1) | (0<<COM0A0) | (1<<WGM01) | (1<<WGM00); /* Clear OC0A on compare match, set OC0A at BOTTOM */
-    DDRD |= _BV(PD6); /* output */
+    OCR0B = value;
 }
 
-static void pwm_stop()
+static void pwm_led_start()
 {
-    TCCR0A = 0; /* disable pwm */
+    cli();
+    PORTD &= ~_BV(PD5); /* low */
+
+    TCCR0A = (TCCR0A & ~(_BV(COM0B1)|_BV(COM0B0))) |
+             (1<<COM0B1) | (0<<COM0B0); /* Enable OC0B, clear on compare match, set at BOTTOM */
+
+    DDRD |= _BV(PD5); /* output */
+    sei();
+}
+
+static void pwm_dim_start()
+{
+    cli();
     PORTD &= ~_BV(PD6); /* low */
+
+    //TCNT0 = 0; //clear timer
+    TCCR0A = (TCCR0A & ~(_BV(COM0A1)|_BV(COM0A0))) |
+             (1<<COM0A1) | (0<<COM0A0); /* Enable OC0A, clear on compare match, set at BOTTOM */
+
+    DDRD |= _BV(PD6); /* output */
+    sei();
+}
+
+static void pwm_dim_stop()
+{
+    cli();
+    /* disable pwm output */
+    TCCR0A &= ~(_BV(COM0A1)|_BV(COM0A0));
+    PORTD &= ~_BV(PD6); /* low */
+    sei();
 }
 
 static void lumunance_set_int(uint8_t value)
@@ -207,7 +305,17 @@ static void lumunance_set_int(uint8_t value)
 	VCP_VALUE_INTERNAL_SET(VCPH_LUMINANCE_INDEX, value);
 
 	value = pgm_read_byte_near(&pwm_curve_P[value]);
-	set_pwm(value);
+	set_dim_pwm(value);
+    }
+}
+
+static void ctl_lum_set_int(uint8_t value)
+{
+    if (value <= VCPH_CTL_LUM_MAX){
+	VCP_VALUE_INTERNAL_SET(VCPH_CTL_LUM_INDEX, value);
+
+	value = 255 - (31 - value) * 8;
+	set_led_pwm(value);
     }
 }
 
@@ -217,6 +325,14 @@ void lumunance_set(uint8_t value)
     nvram_set(NVR_LUMINANCE, value);
 
     lumunance_set_int(value);
+}
+
+void ctl_lum_set(uint8_t value)
+{
+    blink();
+    nvram_set(NVR_CTL_LUM, value);
+
+    ctl_lum_set_int(value);
 }
 
 void lumunance_inc()
@@ -250,6 +366,9 @@ void handle_vcp()
 	case VCPH_LUMINANCE_INDEX:
 	    lumunance_set(value);
 	    break;
+	case VCPH_CTL_LUM_INDEX:
+	    ctl_lum_set(value);
+	    break;
 	}
 
     } else {
@@ -280,13 +399,13 @@ static char buttons_status()
 	return res;
     }
 
-    if ((PIND & _BV(PD2)) == 0){
+    if ((PINC & _BV(PC2)) == 0){
 	res |= button_down(0) << 0;
     } else {
 	button_up(0);
     }
 
-    if ((PIND & _BV(PD4)) == 0){
+    if ((PINC & _BV(PC3)) == 0){
 	res |= button_down(1) << 1;
     } else {
 	button_up(1);
@@ -300,14 +419,19 @@ void restore()
     uint8_t tmp;
 
     /* skip settings restore if any button is pressed */
-    if ((PIND & _BV(PD2)) == 0)
+    if ((PINC & _BV(PD2)) == 0)
 	return;
-    if ((PIND & _BV(PD4)) == 0)
+    if ((PINC & _BV(PD3)) == 0)
 	return;
 
     if (nvram_get(NVR_LUMINANCE, &tmp)){
 	if (tmp <= VCPH_LUMINANCE_MAX)
 	    lumunance_set_int(tmp);
+    }
+
+    if (nvram_get(NVR_CTL_LUM, &tmp)){
+	if (tmp <= VCPH_CTL_LUM_MAX)
+	    ctl_lum_set_int(tmp);
     }
 }
 
@@ -376,7 +500,7 @@ static void handle_en_in()
 		status_en++;
 		return;
 	    }
-	    pwm_start();
+	    pwm_dim_start();
 	    set_status_en_timer(PWM_SETTLE_TICKS);
 	    status_en = EN_STARTING_PWM_WAIT;
 	    TRACE(0x40);
@@ -389,6 +513,7 @@ static void handle_en_in()
 	    if (status_en_timer == 0){
 		set_en_out();
 		status_en = EN_STARTED;
+		led_display_sync();
 		TRACE(0x41);
 	    }
 	} else {
@@ -403,6 +528,7 @@ static void handle_en_in()
 	    clear_en_out();
 	    set_status_en_timer(PWM_KEEP_TICKS);
 	    status_en = EN_STOPPING_PWM_KEEP;
+	    led_display_sync();
 	    TRACE(0x43);
 	}
 	break;
@@ -410,10 +536,11 @@ static void handle_en_in()
 	if (en_in){
 	    set_en_out();
 	    status_en = EN_STARTED;
+	    led_display_sync();
 	    TRACE(0x44);
 	} else {
 	    if (status_en_timer == 0){
-		pwm_stop();
+		pwm_dim_stop();
 		status_en = EN_STOPPED;
 		TRACE(0x45);
 	    }
@@ -476,12 +603,16 @@ int main()
     sei();
 
     lumunance_set_int(DEFAULT_LUMINANCE);
+    ctl_lum_set_int(DEFAULT_CTL_LUM);
 
     wdt_reset();
 
     nvram_init();
 
     restore();
+
+    pwm_led_start();
+    //led_onboard_on();
 
     blink();
     putl_P(PSTR("Hello World!\n"));
@@ -543,10 +674,10 @@ ISR(TIMER1_COMPA_vect)
     if (blink_status == 0){
 	/* do nothing */
     } else if (blink_status == 1){
-	led_on();
+	led_event_on();
 	blink_status = 2;
     } else if (blink_status >= (LED_BLINK_TIME/(1000/TICK_HZ))){
-	led_off();
+	led_event_off();
 	blink_status = 0;
     } else {
 	blink_status++;

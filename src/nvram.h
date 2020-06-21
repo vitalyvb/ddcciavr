@@ -5,7 +5,8 @@
 #include "config.h"
 
 #define NVR_LUMINANCE (0)
-#define NVR_DATA_COUNT (1)
+#define NVR_CTL_LUM (1)
+#define NVR_DATA_COUNT (2)
 
 extern char nvram_timer;
 

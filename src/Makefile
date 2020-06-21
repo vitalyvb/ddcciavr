@@ -1,11 +1,11 @@
-PREFIX=/usr/local/avr/bin/
+#PREFIX=/usr/local/avr/bin/
 CC=$(PREFIX)avr-gcc
 SIZE=$(PREFIX)avr-size
 OBJCOPY=$(PREFIX)avr-objcopy
 OBJDUMP=$(PREFIX)avr-objdump
-CFLAGS=-pipe -mmcu=atmega48 -Os -g -Wall
+CFLAGS=-pipe -mmcu=atmega328 -Os -g -Wall
 CFLAGS+=-fpack-struct -fshort-enums -funsigned-bitfields -funsigned-char
-LDFLAGS=-g -Wl,-Map,ddcci.map -Wl,-m,avr4 -Wl,-N -mmcu=atmega48
+LDFLAGS=-g -Wl,-Map,ddcci.map -Wl,-m,avr4 -Wl,-N -mmcu=atmega328
 #LDFLAGS+=-Wl,-u,vfprintf -lprintf_min
 
 all: ddcci.elf lst text
@@ -36,4 +36,4 @@ text: ddcci.hex ddcci.bin ddcci.srec
 	$(OBJCOPY) -j .text -j .data -O binary $< $@
 
 program: ddcci.hex
-	avrdude -P usb -c usbasp -p m48 -v -U flash:w:ddcci.hex -B 4
+	avrdude -b 57600 -P /dev/ttyUSB0 -c arduino -p m328p -v -U flash:w:ddcci.hex -B 4

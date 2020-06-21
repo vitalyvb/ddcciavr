@@ -14,6 +14,7 @@
 #define NVR_SAVE_DELAY (2000) /* ms */
 
 #define DEFAULT_LUMINANCE (50)
+#define DEFAULT_CTL_LUM (31)
 //#define PROVIDE_EDID
 
 #define DCCCI_ADDRESS (0x37)

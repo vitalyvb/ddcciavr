@@ -39,7 +39,7 @@
 
 char nvram_timer;
 
-#define NVR_VERSION (0x81)
+#define NVR_VERSION (0x82)
 
 struct nvelement {
     uint8_t index;
@@ -142,6 +142,15 @@ static void rbuf_scan()
 
 }
 
+static void nvram_clear()
+{
+    int i;
+    for (i=0; i<sizeof(struct nvelement)*NVR_RING_ELEMENTS ; i++){
+        eeprom_write_byte(NVR_VERSION_IDX+i, 0xff);
+        wdt_reset();
+    }
+}
+
 void nvram_init()
 {
     uint8_t buf;
@@ -161,6 +170,7 @@ void nvram_init()
 	putl_P(PSTR("\n"));
     } else {
 	putl_P(PSTR("!nvram\n"));
+	nvram_clear();
     }
 }
 
